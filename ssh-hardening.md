@@ -138,7 +138,13 @@ uid=1000(devops) gid=1000(devops) groups=1000(devops),10(wheel)
 Remote login using the `devops` account was successfully tested.
 
 ```bash
-ssh devops@<server-ip>
+ssh devops@192.168.75.128
+```
+
+Authentication result:
+
+```text
+Authenticated using "publickey"
 ```
 
 After login:
