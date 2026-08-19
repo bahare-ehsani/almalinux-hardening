@@ -53,13 +53,24 @@ The following services were active during the initial assessment:
 
 ## Initial Assessment
 
-The server currently has:
+The server initially had:
 
 - SELinux enabled in Enforcing mode.
 - firewalld enabled and running.
 - SSH exposed on TCP port 22.
 - chronyd listening only on localhost.
 - auditd and rsyslog enabled.
-- No unnecessary network listening services identified during the initial assessment.
+- Only SSH and localhost-bound chronyd listeners were identified during the initial assessment.
 
 This baseline will be used to compare the system before and after hardening.
+
+---
+
+## Patch and Post-Reboot Verification
+
+The system was patched using DNF to install the latest available package and security updates.
+
+### Kernel Before Patch
+
+```text
+5.14.0-503.11.1.el9_5.x86_64
