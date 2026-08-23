@@ -1,5 +1,3 @@
- SELinux Hardening
-
 ## 1. Objective
 
 This document records the SELinux security verification performed on the
