@@ -2,25 +2,35 @@
 
 ## Objective
 
-Keep the AlmaLinux server up to date with the latest available security and system packages while maintaining service availability and providing a controlled rollback point before system changes.
+Keep the AlmaLinux server up to date with the latest security and system packages while maintaining service availability and providing a controlled rollback point before system changes.
 
 ## Environment
 
-* **OS:** AlmaLinux 10.2
-* **Kernel (before update):** `6.12.0-211.7.3.el10_2.x86_64`
-* **Kernel (after update):** `6.12.0-211.49.1.el10_2.x86_64`
-* **Package Manager:** DNF
-* **Primary Service Verified:** OpenSSH (`sshd`)
+| Item            | Value            |
+| --------------- | ---------------- |
+| OS              | AlmaLinux 10.2   |
+| Package Manager | DNF              |
+| Primary Service | OpenSSH (`sshd`) |
+| Rollback Point  | VMware Snapshot  |
+
+## Before / After
+
+| Component     | Before                         | After                           |
+| ------------- | ------------------------------ | ------------------------------- |
+| Kernel        | `6.12.0-211.7.3.el10_2.x86_64` | `6.12.0-211.49.1.el10_2.x86_64` |
+| Package State | Updates available              | Packages updated                |
+| Reboot Status | Not required                   | Required and completed          |
+| SSH Service   | Active                         | Active                          |
 
 ## Pre-Change Assessment
 
-Before applying updates, available package updates were reviewed using:
+Available updates were reviewed before making any changes:
 
 ```bash
 dnf check-update
 ```
 
-The system had updates available for several core components, including:
+Updates were available for several core system components, including:
 
 * Kernel
 * OpenSSH
@@ -31,19 +41,19 @@ The system had updates available for several core components, including:
 * NetworkManager
 * glibc
 
-Because the server is treated as a production-like environment, a VMware snapshot was created before applying the package updates.
+A VMware snapshot was created before the update to provide a controlled rollback point.
 
 ## Patch Installation
 
-The pending transaction was reviewed before confirmation.
+The proposed transaction was reviewed before confirmation.
 
-The update included:
+| Change             |  Result |
+| ------------------ | ------: |
+| Packages upgraded  |      85 |
+| Packages installed |       4 |
+| Download size      | ~317 MB |
 
-* **85 packages upgraded**
-* **4 packages installed**
-* Approximately **317 MB** of packages downloaded
-
-The transaction was then approved and completed using:
+The update was then applied using:
 
 ```bash
 dnf upgrade
@@ -51,39 +61,35 @@ dnf upgrade
 
 During the transaction, the official AlmaLinux GPG signing key was imported and verified by DNF.
 
-## Reboot Requirement
+## Reboot Assessment
 
-After the update, the system was checked for processes and components requiring a restart:
+After the update, the system was checked for components requiring a restart:
 
 ```bash
 dnf needs-restarting -r
 ```
 
-The command reported that a reboot was required because core components including the kernel, glibc, systemd, firmware, and microcode had been updated.
+A reboot was required because core components including the kernel, glibc, systemd, firmware, and microcode had been updated.
 
 The server was then rebooted.
 
 ## Post-Change Verification
 
-After reboot, the running kernel was verified:
+### Kernel
 
 ```bash
 uname -r
 ```
 
-Result:
-
 ```text
 6.12.0-211.49.1.el10_2.x86_64
 ```
 
-The SSH service was also verified:
+### SSH Service
 
 ```bash
 systemctl is-active sshd
 ```
-
-Result:
 
 ```text
 active
@@ -94,20 +100,20 @@ active
 Patch Management was completed successfully.
 
 * System packages updated successfully
-* New kernel successfully loaded after reboot
+* New kernel loaded successfully after reboot
 * SSH service remained operational
-* No service availability issue was observed after the update
+* No service availability issues were observed
 
 ## Operational Notes
 
-For production environments, system updates should be performed through a controlled change process that includes:
+For production environments, OS patching should follow a controlled change process:
 
 1. Pre-change assessment
 2. Backup or snapshot
-3. Review of the proposed package transaction
+3. Package transaction review
 4. Controlled update
-5. Reboot planning when required
-6. Post-change service verification
+5. Reboot planning
+6. Post-change verification
 7. Rollback readiness
 
 This approach reduces the risk of service disruption during operating system maintenance.
