@@ -2,196 +2,196 @@
 
 ## Objective
 
-Harden SSH access on AlmaLinux 9 by restricting authentication methods, preventing direct root login, limiting authentication attempts, and allowing SSH access only for the designated administrative user.
+Harden the OpenSSH service to reduce unauthorized access risks while maintaining a reliable administrative access path through SSH key authentication.
+
+The server is treated as a production environment; therefore, SSH changes were applied incrementally with configuration validation, backups, rollback points, and independent access verification.
+
+## Current State
+
+Before hardening:
+
+* OpenSSH was active and listening on TCP port `22`.
+* Direct SSH access for `root` was enabled.
+* Password-based SSH authentication was enabled.
+* `MaxAuthTries` was set to `6`.
+* `LoginGraceTime` was set to `120` seconds.
+* `X11Forwarding` was enabled.
+* `GSSAPIAuthentication` was enabled.
+* The `devops` administrative account was available and belonged to the `wheel` group.
+* SSH key authentication for `devops` was configured and tested.
 
 ## Configuration
 
-Hardening configuration is stored in:
+SSH hardening was applied through:
+
+`/etc/ssh/sshd_config.d/01-permitrootlogin.conf`
+
+Final configuration:
 
 ```text
-/etc/ssh/sshd_config.d/99-hardening.conf
-```
-
-```text
+PermitRootLogin no
 PasswordAuthentication no
-
-LoginGraceTime 30
 MaxAuthTries 3
-ClientAliveInterval 300
-ClientAliveCountMax 2
-X11Forwarding yes
-PermitEmptyPasswords no
-AllowUsers devops
+LoginGraceTime 30
+X11Forwarding no
 ```
 
-## Security Settings
-
-| Setting                  |    Value | Purpose                                            |
-| ------------------------ | -------: | -------------------------------------------------- |
-| `PasswordAuthentication` |     `no` | Disable password-based SSH authentication          |
-| `PermitRootLogin`        |     `no` | Prevent direct SSH login as root                   |
-| `AllowUsers`             | `devops` | Restrict SSH access to the `devops` user           |
-| `LoginGraceTime`         |     `30` | Limit the time allowed for authentication          |
-| `MaxAuthTries`           |      `3` | Limit failed authentication attempts               |
-| `ClientAliveInterval`    |    `300` | Send keepalive messages every 5 minutes            |
-| `ClientAliveCountMax`    |      `2` | Disconnect after two unanswered keepalive messages |
-| `X11Forwarding`          |    `yes` | X11 forwarding remains enabled as required         |
-| `PermitEmptyPasswords`   |     `no` | Prevent authentication using empty passwords       |
-
-## Administrative Access Model
-
-Direct root SSH access is disabled.
-
-The `devops` user is allowed to connect through SSH and has administrative privileges through `sudo`.
+Additional authentication state:
 
 ```text
-SSH
- ├── root   → DENIED
- │
- └── devops → ALLOWED
-              │
-              └── sudo → root
+KbdInteractiveAuthentication no
+GSSAPIAuthentication yes
 ```
 
-The `devops` account belongs to the `wheel` group and has full sudo privileges:
+`KbdInteractiveAuthentication` was already disabled by the existing configuration.
+
+`GSSAPIAuthentication` was intentionally left enabled because no requirement was established to disable it in the current environment.
+
+### Administrative Access
+
+A dedicated administrative account was used instead of direct root SSH access:
 
 ```text
-User devops may run the following commands on localhost:
-    (ALL) ALL
+User: devops
+Group: wheel
+Authentication: SSH public key
+Privilege escalation: sudo
 ```
+
+The SSH public key was configured in:
+
+`/home/devops/.ssh/authorized_keys`
+
+with restricted ownership and permissions.
+
+### Change Control
+
+Before sensitive SSH changes:
+
+* A VMware snapshot was created as a rollback point.
+* Configuration backups were created before modifying the SSH configuration.
+* SSH syntax was validated using `sshd -t`.
+* Changes were applied using `systemctl reload sshd` rather than restarting the service.
+* The existing administrative session was kept open until a new SSH session was independently verified.
 
 ## Verification
 
-### Validate SSH configuration
+### Configuration Validation
+
+After each configuration change:
 
 ```bash
 sshd -t
 ```
 
-Result:
+was used to validate the SSH configuration syntax.
 
-```text
-No output / no errors
-```
-
-### Verify effective SSH configuration
+Effective configuration was then verified using:
 
 ```bash
-sshd -T | grep -E '^(passwordauthentication|permitrootlogin|allowusers|allowgroups|logingracetime|maxauthtries|clientaliveinterval|clientalivecountmax|x11forwarding|permitemptypasswords)'
+sshd -T
 ```
 
-Expected result:
+Final effective values:
 
 ```text
-logingracetime 30
-maxauthtries 3
-clientaliveinterval 300
-clientalivecountmax 2
 permitrootlogin no
 passwordauthentication no
-x11forwarding yes
-permitemptypasswords no
-allowusers devops
+kbdinteractiveauthentication no
+maxauthtries 3
+logingracetime 30
+x11forwarding no
+gssapiauthentication yes
 ```
 
-### Verify SSH service
+### SSH Key Authentication
 
-```bash
-systemctl is-active sshd
-systemctl is-enabled sshd
-```
-
-Result:
+A new SSH session was established successfully using the `devops` account and its SSH private key.
 
 ```text
-active
-enabled
+ssh devops@192.168.75.129
 ```
 
-### Verify administrative privileges
-
-```bash
-sudo -l -U devops
-```
-
-Result confirms:
-
-```text
-User devops may run the following commands on localhost:
-    (ALL) ALL
-```
-
-### Verify user membership
-
-```bash
-id devops
-```
-
-Result:
-
-```text
-uid=1000(devops) gid=1000(devops) groups=1000(devops),10(wheel)
-```
-
-### SSH Login Test
-
-Remote login using the `devops` account was successfully tested.
-
-```bash
-ssh devops@192.168.75.128
-```
-
-Authentication result:
-
-```text
-Authenticated using "publickey"
-```
-
-After login:
+The session was verified with:
 
 ```bash
 whoami
 ```
 
-returns:
+Result:
 
 ```text
 devops
 ```
 
-Administrative access was also verified using:
+### Sudo Verification
+
+Administrative privilege escalation was verified using:
 
 ```bash
-sudo -i
+sudo -l
 ```
 
-and:
-
-```bash
-whoami
-```
-
-returns:
+The `devops` account was confirmed to have:
 
 ```text
-root
+(ALL) ALL
 ```
 
-## Final Status
+### Password Authentication Test
 
-SSH hardening verification completed successfully.
+Password-only SSH authentication was explicitly tested by disabling public-key authentication from the client:
 
-* [x] Password authentication disabled
-* [x] Direct root SSH login disabled
-* [x] SSH access restricted to `devops`
-* [x] Authentication attempts limited
-* [x] SSH connection timeout configured
-* [x] Empty passwords disabled
-* [x] SSH configuration validated
-* [x] SSH service active and enabled
-* [x] `devops` SSH access verified
-* [x] `devops` sudo access verified
-* [x] Root administrative access through sudo verified
+```text
+ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no devops@192.168.75.129
+```
 
-**Status: PASS**
+The connection was rejected with:
+
+```text
+Permission denied
+```
+
+This confirmed that password-based SSH authentication was effectively disabled.
+
+### Root SSH Access
+
+Direct SSH access for `root` was disabled through:
+
+```text
+PermitRootLogin no
+```
+
+Administrative access is performed through `devops` followed by `sudo`.
+
+## Before / After
+
+| Setting                        | Before | After |
+| ------------------------------ | -----: | ----: |
+| `PermitRootLogin`              |    yes |    no |
+| `PasswordAuthentication`       |    yes |    no |
+| `KbdInteractiveAuthentication` |     no |    no |
+| `MaxAuthTries`                 |      6 |     3 |
+| `LoginGraceTime`               |    120 |    30 |
+| `X11Forwarding`                |    yes |    no |
+| `GSSAPIAuthentication`         |    yes |   yes |
+
+## Result
+
+SSH access has been hardened successfully.
+
+The final configuration:
+
+* Prevents direct root SSH access.
+* Prevents password-based SSH authentication.
+* Uses SSH key authentication for the `devops` administrative account.
+* Limits authentication attempts to `3`.
+* Reduces the SSH login grace period to `30` seconds.
+* Disables X11 forwarding.
+* Preserves GSSAPI authentication because no requirement to disable it was identified.
+* Maintains administrative access through `sudo`.
+
+All changes were syntax-validated, applied using SSH reload, and verified through independent SSH connections.
+
+SSH Hardening is considered **completed and operationally verified**.
 
