@@ -1,172 +1,100 @@
 # Systemd Hardening
 
-## Overview
+## Objective
 
-Systemd hardening was performed on the AlmaLinux 9.8 laboratory VM to reduce the attack surface of system services while maintaining normal system functionality.
+Review systemd services and security exposure, identify unnecessary services, and apply only justified changes while maintaining compatibility with current and future DevOps workloads.
 
-The approach focused on:
+## Current State
 
-* Identifying unnecessary enabled services
-* Disabling services that were not required in the laboratory environment
-* Applying systemd security restrictions to `rsyslog`
-* Verifying service functionality after each security change
-* Avoiding unnecessary restrictions that could affect service stability
+* Systemd is running normally.
+* 15 services are currently running.
+* 23 service unit files are enabled.
+* No failed systemd units were detected.
+* No clearly unnecessary active services were identified.
+* `systemd-pstore.service` was enabled but did not run because its start condition was not met.
+* Services required for networking, remote administration, security, logging, and future DevOps workloads were retained.
 
----
+## Configuration
 
-## Service Review
-
-The system was reviewed using:
+Systemd services were reviewed using:
 
 ```bash
-systemctl --failed
+systemctl list-units --type=service --state=running
 systemctl list-unit-files --type=service --state=enabled
-systemd-analyze security --no-pager
 ```
 
-No failed systemd units were present after the hardening changes.
-
-Two unnecessary services were disabled because they were not required by the VM configuration:
+Systemd security exposure was reviewed using:
 
 ```bash
-systemctl disable --now systemd-boot-update.service
-systemctl disable --now systemd-network-generator.service
+systemd-analyze security
 ```
 
-The network configuration was confirmed to remain functional through NetworkManager.
+The security score was used as an assessment indicator only. Services were not disabled solely because they received a high exposure score.
 
----
+Unnecessary or potentially unnecessary services were reviewed with consideration for current system requirements and future workloads such as Docker, Kubernetes, Ansible, CI/CD, and monitoring.
 
-## rsyslog Hardening
-
-`rsyslog` was selected for service-level hardening because it runs with elevated privileges and handles system log files.
-
-A systemd drop-in override was created at:
+`systemd-pstore.service` was identified as unnecessary for the current environment. It was not running because:
 
 ```text
-/etc/systemd/system/rsyslog.service.d/override.conf
+ConditionDirectoryNotEmpty=/sys/fs/pstore was not met
 ```
 
-The following restrictions were applied:
+A VMware snapshot was created before the change.
 
-```ini
-[Service]
-NoNewPrivileges=yes
-ProtectControlGroups=yes
-ProtectHome=read-only
-ProtectKernelModules=yes
-ProtectKernelTunables=yes
-RestrictSUIDSGID=yes
-SystemCallArchitectures=native
-SystemCallFilter=~@clock @debug @module @raw-io @reboot @swap @cpu-emulation @obsolete
-LockPersonality=yes
-MemoryDenyWriteExecute=yes
+The service was then disabled:
 
-PrivateTmp=yes
-
-ProtectSystem=strict
-ReadWritePaths=/var/log /var/lib/rsyslog
-
-PrivateDevices=yes
-ProtectClock=yes
-ProtectKernelLogs=yes
-RestrictRealtime=yes
-
-ProtectProc=invisible
-ProcSubset=pid
+```bash
+systemctl disable systemd-pstore.service
 ```
 
-### Rationale
+No changes were made to essential services such as:
 
-The restrictions were selected to limit rsyslog's access to:
-
-* Kernel interfaces and kernel logs
-* System devices
-* Process information
-* Temporary directories
-* System files outside its required write locations
-* Privileged system calls and namespaces
-* Additional privileges and runtime capabilities
-
-Because rsyslog needs to write system logs, `ProtectSystem=strict` was combined with:
-
-```ini
-ReadWritePaths=/var/log /var/lib/rsyslog
-```
-
-This provides a read-only system filesystem while preserving the directories required by rsyslog.
-
----
+* `sshd`
+* `NetworkManager`
+* `firewalld`
+* `auditd`
+* `chronyd`
+* `crond`
+* `rsyslog`
+* `dbus-broker`
+* `sssd`
+* `kdump`
 
 ## Verification
 
-After applying the systemd restrictions, the service was reloaded and restarted:
+The following checks were performed:
 
-```bash
-systemctl daemon-reload
-systemctl restart rsyslog.service
+* Reviewed currently running systemd services.
+* Reviewed enabled systemd service units.
+* Reviewed systemd security exposure.
+* Checked for unnecessary services such as Cockpit, NIS, RPC, Avahi, Bluetooth, CUPS, Samba, and NFS.
+* Confirmed that `nis-domainname.service` was already disabled.
+* Reviewed `kdump.service` and confirmed it was active and functioning correctly.
+* Reviewed `systemd-pstore.service` and confirmed that it was not required in the current environment.
+* Verified that `systemd-pstore.service` is now disabled.
+* Verified that no systemd units are in a failed state.
+
+Final verification:
+
+```text
+systemd-pstore.service → disabled
+Failed units → 0
 ```
 
-Service health was verified with:
+## Before / After
 
-```bash
-systemctl status rsyslog.service --no-pager
-```
-
-Log processing was tested using:
-
-```bash
-logger "rsyslog-hardening-test"
-tail -n 5 /var/log/messages
-```
-
-The test message was successfully written to `/var/log/messages`, confirming that the hardening changes did not prevent normal logging functionality.
-
-The resulting security configuration was reviewed with:
-
-```bash
-systemd-analyze security rsyslog.service
-```
-
-The implemented restrictions were confirmed by `systemd-analyze security`, including:
-
-* `ProtectSystem`
-* `PrivateTmp`
-* `PrivateDevices`
-* `ProtectClock`
-* `ProtectKernelLogs`
-* `ProtectProc`
-* `ProcSubset`
-* `RestrictRealtime`
-* `NoNewPrivileges`
-* `MemoryDenyWriteExecute`
-* `SystemCallFilter`
-* `RestrictSUIDSGID`
-
----
-
-## Security Decisions
-
-Not every `systemd-analyze security` finding was changed.
-
-Some recommendations, particularly the remaining `CapabilityBoundingSet` findings, were intentionally left unchanged. The goal was to apply meaningful and low-risk restrictions rather than modify every available security option solely to improve the exposure score.
-
-This approach reduces the risk of breaking a required system service while still providing significant service isolation and privilege reduction.
-
----
+| Setting                   | Before   | After    |
+| ------------------------- | -------- | -------- |
+| `systemd-pstore.service`  | enabled  | disabled |
+| Failed systemd units      | 0        | 0        |
+| `nis-domainname.service`  | disabled | disabled |
+| Essential system services | Enabled  | Enabled  |
 
 ## Result
 
-Systemd hardening was completed for the current laboratory baseline.
+Systemd services were reviewed using a least-privilege approach without applying unnecessary restrictions.
 
-The final configuration:
+Only `systemd-pstore.service` was disabled because it was not required in the current environment and was not actively providing functionality.
 
-* Removes unnecessary services
-* Reduces the privileges and filesystem access of `rsyslog`
-* Restricts access to devices, processes, kernel interfaces and system files
-* Preserves required logging functionality
-* Verifies service health after security changes
-* Documents security decisions and intentionally unchanged recommendations
-
-The configuration is intended as a practical security baseline for the AlmaLinux laboratory environment and can be further extended if stricter production requirements are introduced.
+Essential system services were retained to maintain system stability and compatibility with future DevOps workloads, including Docker, Kubernetes, Ansible, CI/CD, and monitoring.
 
