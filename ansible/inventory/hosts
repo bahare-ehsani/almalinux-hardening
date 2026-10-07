@@ -1,0 +1,2 @@
+[managed]
+almalinux ansible_host=192.168.75.129 ansible_user=devops
